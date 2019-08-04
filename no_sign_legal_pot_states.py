@@ -19,9 +19,9 @@ from ar_track_alvar_msgs.msg import AlvarMarkers
 
 '''
 TODO:
-delay for highway state switch -- done
+delay for highway state switch -- DONE
 
-left wall follower
+left wall follower -- DONE
 
 line follower at graveyard -- try both mine and Nalin's
     switch to pot at AR tag #6
@@ -143,6 +143,7 @@ class Racecar:
 
         # print(self.state)
         self.data = data
+        self.ranges = np.array(self.data.ranges)
 
         if self.state == 'idle':
             self.safety_pub.publish(Bool(True))
@@ -326,7 +327,7 @@ class Racecar:
     def pot(self):
         self.iHat = np.array([0]*1081)
         self.jHat = np.array([0]*1081)
-        for i, item in enumerate(self.data.ranges):
+        for i, item in enumerate(self.ranges):
             angle = float(i)/lidarPoints * (3*pi/2) - (pi/4)
             k = kmax - exp(abs((pi/2)-angle))*0.2
             # k = kmax
@@ -490,59 +491,21 @@ class Racecar:
         if self.data == None:
             return 0
 
-        """ ## TO DO: Find Alg for Wall Following ##
-        TURN_ANGLE = 15
-        CORNER_CONSTANT = 2
-        LARGE_DIST = desired_distance * 3
-        tempAngle = 0
-        numPoints = 1081 #int((self.data.angle_max - self.data.angle_min) / float(self.data.angle_increment))
-        distances = [self.data.ranges[i] for i in range(int(numPoints / 2)) if self.data.ranges[i] >= 0]
-        dist1 = distances[int(float(25) / 50 * len(distances))]
-        dist2 = distances[int(float(35) / 50 * len(distances))]
-        error1 = desired_distance - dist1
-        error2 = desired_distance - dist2
-
-        if distances[len(distances) - 1] < CORNER_CONSTANT*desired_distance:
-            tempAngle = TURN_ANGLE * np.pi/180
-        elif dist1 > LARGE_DIST and dist2 > LARGE_DIST:
-            tempAngle = 0
-        elif error1 > desired_distance*0.3 and error2 > desired_distance*0.3:
-            tempAngle = TURN_ANGLE * np.pi/180
-        elif error1 > desired_distance*0.3 and error2 < desired_distance*0.3:
-            tempAngle = -1 * TURN_ANGLE * np.pi/180 * 1/2
-        elif error1 < desired_distance*0.3 and error2 > desired_distance*0.3:
-            tempAngle = TURN_ANGLE * np.pi/180 * 1/2
-        elif error1 < desired_distance*0.3 and error2 < desired_distance*0.3:
-            tempAngle = -1 * TURN_ANGLE * np.pi/180 """
-
-        #distance = min(i for i in self.data.ranges[230:310])
-        #error = desired_distance - distance
-        ##print(error)
-        #t#empAngle = error
-        #speed = 1/error**2 * SPEED
-        #returns the output of your alg, the new angle to drive in
-
         tempAngle = 0
         KP = .14
         KD = .04
-        length = len(self.data.ranges)
-        self.SIDE = -1
-        if self.SIDE == 1:
-            #Prevents circles
-            if self.data.ranges[length*5/6] < self.data.ranges[length/2]:
-                temp = -KP*(desired_distance - self.data.ranges[length*5/6])
-            else:
-                temp = KP*(desired_distance - self.data.ranges[length*5/6])
-            tempAngle = temp - KD*(3.14/4/(pow(self.data.ranges[length*5/6],2) + pow(self.data.ranges[length*2/3],2) - 2*3.14/4*self.data.ranges[length*5/6]*self.data.ranges[length*2/3])*self.data.ranges[length*5/6]-3.14/4)
+        length = len(self.ranges)
+
+        #Prevents circles
+        if np.min(self.ranges[230:310]) < self.ranges[length/2]:
+            temp = KP*(desired_distance - np.min(self.ranges[230:310]))
         else:
-            #Prevents circles
-            if min(self.data.ranges[230:310]) < self.data.ranges[length/2]:
-                temp = KP*(desired_distance - min(self.data.ranges[230:310]))
-            else:
-                temp = -KP*(desired_distance - min(self.data.ranges[230:310]))
-            print(temp)
-            tempAngle = temp + KD*(3.14/4/(pow(self.data.ranges[length/6],2) + pow(self.data.ranges[length/3],2) - 2*3.14/4*self.data.ranges[length/6]*self.data.ranges[length/3])*self.data.ranges[length/6]-3.14/4)
-            print(tempAngle)
+            temp = -KP*(desired_distance - np.min(self.ranges[230:310]))
+
+        # print(temp)
+        tempAngle = temp + KD*(3.14/4/(pow(self.ranges[length/6], 2) + pow(self.ranges[length/3], 2) - 2*3.14/4*self.ranges[length/6]*self.ranges[length/3])*self.ranges[length/6]-3.14/4)
+        # print(tempAngle)
+
         return tempAngle
 
 
@@ -550,33 +513,19 @@ class Racecar:
         # if lidar data has not been received, do nothing
         if self.data == None:
             return 0
-        ## TO DO: Find Alg for Wall Following ##
-        TURN_ANGLE = 15
-        CORNER_CONSTANT = 2
-        LARGE_DIST = desired_distance * 3
+
         tempAngle = 0
-        numPoints = int((self.data.angle_max - self.data.angle_min) / float(self.data.angle_increment))
+        KP = .14
+        KD = .04
+        length = len(self.ranges)
 
-        distances = [self.data.ranges[i] for i in range(int(numPoints / 2), numPoints) if self.data.ranges[i] >= 0]
-        dist1 = distances[int(float(35) / 50 * len(distances))]
-        dist2 = distances[int(float(25) / 50 * len(distances))]
-        error1 = desired_distance - dist1
-        error2 = desired_distance - dist2
+        #Prevents circles
+        if np.min(self.ranges[770:850]) < self.ranges[length/2]:
+            temp = -KP*(desired_distance - np.min(self.ranges[770:850]))
+        else:
+            temp = KP*(desired_distance - np.min(self.ranges[770:850]))
 
-        if len(distances) < int(numPoints / 2) - 1:
-            tempAngle = TURN_ANGLE * np.pi/180 * 1/5
-        elif distances[0] < CORNER_CONSTANT*desired_distance:
-            tempAngle = -1 * TURN_ANGLE * np.pi/180
-        elif dist1 > LARGE_DIST and dist2 > LARGE_DIST:
-            tempAngle = 0
-        elif error1 > 0 and error2 > 0:
-            tempAngle = -1 * TURN_ANGLE * np.pi/180
-        elif error1 > 0 and error2 < 0:
-            tempAngle = TURN_ANGLE * np.pi/180 * 1/2
-        elif error1 < 0 and error2 > 0:
-            tempAngle = -1 * TURN_ANGLE * np.pi/180 * 1/2
-        elif error1 < 0 and error2 < 0:
-            tempAngle = TURN_ANGLE * np.pi/180
+        tempAngle = temp - KD*(3.14/4/(pow(self.ranges[length*5/6], 2) + pow(self.ranges[length*2/3], 2) - 2*3.14/4*self.ranges[length*5/6]*self.ranges[length*2/3])*self.ranges[length*5/6]-3.14/4)
 
         return tempAngle
 
