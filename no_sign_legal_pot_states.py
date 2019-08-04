@@ -71,7 +71,8 @@ speedFactor = 1.2 #1.3
 #GREEN = np.array([[63, 220, 0], [83, 255, 80]])
 GREEN_LIGHT = np.array([[63, 220, 0], [83, 255, 150]])
 RED_BRICKS = np.array([[153, 102, 102], [255, 204, 204]])
-THRESHOLD_AREA = 20
+RED_LINE = np.array([[0, 30, 130], [10, 255, 255]])
+THRESHOLD_AREA = 10
 
 class Racecar:
     SCAN_TOPIC = '/scan'
@@ -271,7 +272,7 @@ class Racecar:
             self.tagRead = True
             self.timeStarted = time.time()
         elif tag.id == 3 and distTo < AR_DIST_THRESHOLD:
-             self.state = 'boulet'
+             self.state = 'leftWall'
         elif tag.id == 4 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
         elif tag.id == 5 and distTo < AR_DIST_THRESHOLD:
@@ -288,6 +289,7 @@ class Racecar:
             self.state = 'bridge'
         elif tag.id == 10 and distTo < AR_DIST_THRESHOLD:
             self.state = 'rightWall'
+        # consider changing ALL of the ones below to the 'rightWall' state
         elif tag.id == 11 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
         elif tag.id == 12 and distTo < AR_DIST_THRESHOLD:
@@ -295,7 +297,7 @@ class Racecar:
         elif tag.id == 14 and distTo < AR_DIST_THRESHOLD:
             self.state = 'construction'
         elif tag.id == 16 and distTo < AR_DIST_THRESHOLD:
-            self.state = 'leftWall'
+            self.state = 'rightWall'
         elif tag.id == 17 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
 
