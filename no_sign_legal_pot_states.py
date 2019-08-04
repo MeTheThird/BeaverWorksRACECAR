@@ -5,16 +5,39 @@ import rospy
 import cv2
 import time
 
-from sensor_msgs.msg import LaserScan, Image
+from sensor_msgs.msg import LaserScan, Image, Joy
 from ackermann_msgs.msg import AckermannDriveStamped
 from color_segmentation import cd_color_segmentation
 from newZed import Zed_converter
 from ImageMatch import matchLeftRightTemplate
 from cv_bridge import CvBridge, CvBridgeError
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from tf.transformations import euler_from_quaternion
 from std_msgs.msg import Bool
 from ar_track_alvar_msgs.msg import AlvarMarkers
+
+
+'''
+STUFF TO TEST FOR TODAY:
+
+test safety turning off depending on state
+
+green light controller state reset
+
+highway state change delay
+
+windmill left wall follower
+
+line following for graveyard (try localization if time permits)
+
+highway state change delay (part 2)
+
+right wall follow switch at AR tag #8
+
+tune right wall follower for Karaman Commons
+
+hard left at Kelley Construction (if time permits)
+'''
 
 
 '''
@@ -23,25 +46,23 @@ delay for highway state switch -- DONE
 
 left wall follower -- DONE
 
-line follower at graveyard -- try both mine and Nalin's
-    switch to pot at AR tag #6
+line follower at graveyard -- try both mine and Nalin's -- done
+    switch to pot at AR tag #6 -- done
 
-slow down right wall follow at tag #8
+slow down right wall follow at tag #8 -- done
 
-right wall at roundabout -- stay through TA section
+right wall at roundabout -- stay through TA section -- needs to be tuned for the TA section
 
-switch to pot at the end of the section
+switch to pot at the end of the section -- no
 
-left wall follow at Lockheed garden
+left wall follow at Lockheed garden -- no
 
-mb Kelley construction left wall <<shortcut>> OR straight up pot
+mb Kelley construction left wall <shortcut> OR straight up pot OR right wall follower -- right wall
 
-decrease speed??
-
-implement 'idle' state reset with joystick (low priori)
+implement 'idle' state reset with joystick (low priori) -- done
 
 CONSIDER --->>>>>> doing a right wall follower all the way to the end after the end of the second
-time we go on the highway
+time we go on the highway -- yes
 '''
 
 lidarPoints = 1081
@@ -81,7 +102,7 @@ class Racecar:
     SAFETY_TOPIC = '/pot_safe'
     AR_TOPIC = "/ar_pose_marker"
 
-    state = 'pot'
+    state = 'idle'
     greenFrames = []
     tagRead = False
     timeStarted = 0
@@ -112,7 +133,11 @@ class Racecar:
         self.pose_sub = rospy.Subscriber(self.POSE_TOPIC, PoseStamped, self.poseCallback)
         self.safety_pub = rospy.Publisher(self.SAFETY_TOPIC, Bool, queue_size = 1)
         self.ar_sub = rospy.Subscriber(self.AR_TOPIC, AlvarMarkers, self.arCallback)
+        self.sub_joy = rospy.Subscriber('/vesc/joy', Joy, callback=self.joy_callback)
 
+        # self.init_pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=1)
+
+        self.pressed = [time.time() for i in range(4)]
         self.camera_data = Zed_converter(False, save_image = False)
         self.bridge = CvBridge()
         self.img = None
@@ -163,27 +188,14 @@ class Racecar:
                 self.state = 'highway'
                 self.timeStarted = -1
 
-        elif self.state == 'sign':
-            self.safety_pub.publish(Bool(True))
-            turnDir = self.oneWayTurn()
-            """ self.cmd.drive.speed = SPEED
-            if turnDir == 'left' and not self.turnStarted:
-                self.cmd.drive.steering_angle = 1
-                # self.state = 'leftWallFollower'
-                self.turnStarted = True
-                self.timeStarted = time.time()
-            elif turnDir == 'right' and not self.turnStarted:
-                self.cmd.drive.steering_angle = -1
-                # self.state = 'rightWallFollower'
-                self.turnStarted = True
-                self.timeStarted = time.time()
-            elif time.time() - self.timeStarted > 1.0:
-                self.state = 'pot' """
+        # elif self.state == 'sign':
+        #     self.safety_pub.publish(Bool(True))
+        #     turnDir = self.oneWayTurn()
 
-        elif self.state == 'bricks':
-            self.safety_pub.publish(Bool(False))
-            self.cmd.drive.speed = SPEED
-            self.cmd.drive.steering_angle = self.bricksTurnAngle()
+        # elif self.state == 'bricks':
+        #     self.safety_pub.publish(Bool(False))
+        #     self.cmd.drive.speed = SPEED
+        #     self.cmd.drive.steering_angle = self.bricksTurnAngle()
 
         # elif self.state == "carWash":
         #     self.safety_pub.publish(Bool(False))
@@ -209,12 +221,13 @@ class Racecar:
 
         elif self.state == "graveyard":
             self.safety_pub.publish(Bool(True))
-            self.state = 'pot'
+            self.cmd.drive.speed = SPEED / 2
+            self.cmd.drive.steering_angle = self.lineFollowAngle()
 
-        elif self.state == "construction":
-            self.safety_pub.publish(Bool(True))
-            self.cmd.drive.speed = SPEED
-            self.cmd.drive.steering_angle = self.leftWall(LOW_DESIRED_DISTANCE)
+        # elif self.state == "construction":
+        #     self.safety_pub.publish(Bool(True))
+        #     self.cmd.drive.speed = SPEED
+        #     self.cmd.drive.steering_angle = self.leftWall(LOW_DESIRED_DISTANCE)
 
         elif self.state == "leftWall":
             self.safety_pub.publish(Bool(True))
@@ -224,6 +237,11 @@ class Racecar:
         elif self.state == "rightWall":
             self.safety_pub.publish(Bool(True))
             self.cmd.drive.speed = SPEED
+            self.cmd.drive.steering_angle = self.rightWall(LOW_DESIRED_DISTANCE)
+
+        elif self.state == 'rightWallOnPot':
+            self.safety_pub.publish(Bool(True))
+            self.cmd.drive.speed = 1000
             self.cmd.drive.steering_angle = self.rightWall(LOW_DESIRED_DISTANCE)
 
 
@@ -254,6 +272,20 @@ class Racecar:
             self.cmd.drive.steering_angle = self.point2point(point)
 
         self.pub_drive.publish(self.cmd)
+
+    def joy_callback(self, data):
+        active_buttons = data.buttons[:4]
+        for i, button in enumerate(active_buttons):
+            if button != 1 or time.time() - self.pressed[i] < 1:
+                continue
+            self.pressed[i] = time.time()
+            if i == 0:
+                #A
+                self.state = "idle"
+                self.greenFrames = []
+            if i == 1:
+                #B
+                print(self.pos)
 
 
     def poseCallback(self, msg):
@@ -288,6 +320,7 @@ class Racecar:
 
         elif tag.id == 5 and distTo < AR_DIST_THRESHOLD:
             self.state = 'graveyard'
+            # self.init_pose_pub.publish(INSERT_POSE_HERE)
 
         elif tag.id == 6 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
@@ -309,19 +342,19 @@ class Racecar:
 
         # consider changing ALL of the ones below to the 'rightWall' state
         elif tag.id == 11 and distTo < AR_DIST_THRESHOLD:
-            self.state = 'pot'
+            self.state = 'rightWall'
 
         elif tag.id == 12 and distTo < AR_DIST_THRESHOLD:
-            self.state = 'pot'
+            self.state = 'rightWall'
 
         elif tag.id == 14 and distTo < AR_DIST_THRESHOLD:
-            self.state = 'construction'
+            self.state = 'rightWall'
 
         elif tag.id == 16 and distTo < AR_DIST_THRESHOLD:
             self.state = 'rightWall'
 
         elif tag.id == 17 and distTo < AR_DIST_THRESHOLD:
-            self.state = 'pot'
+            self.state = 'rightWallOnPot'
 
 
     def pot(self):
@@ -528,6 +561,25 @@ class Racecar:
         tempAngle = temp - KD*(3.14/4/(pow(self.ranges[length*5/6], 2) + pow(self.ranges[length*2/3], 2) - 2*3.14/4*self.ranges[length*5/6]*self.ranges[length*2/3])*self.ranges[length*5/6]-3.14/4)
 
         return tempAngle
+
+
+    def lineFollowAngle(self):
+        while self.camera_data.cv_image is None:
+            time.sleep(0.5)
+            print("sleeping")
+
+        ANGLE_CONSTANT = 0.1
+        # applies the current filter to the image and stores the image in imagePush
+        self.flag_box, self.imagePush, _ = cd_color_segmentation(self.camera_data.cv_image, RED_LINE, (0, self.camera_data.cv_image.shape[1]), (int(1.0/2 * self.camera_data.cv_image.shape[0])), self.camera_data.cv_image.shape[0])
+        CENTER = self.imagePush.shape[1] / 2
+        xAvg = (self.flag_box[0][0] + self.flag_box[1][0]) / 2
+        #print('avg: ' + str(xAvg))
+        error = xAvg - CENTER
+        # might not be times -1, but that's what worked for us in the line following challenge
+        turn_angle = -1*error * ANGLE_CONSTANT * np.pi/180
+        #print('turn angle: ' + str(turn_angle))
+
+        return turn_angle
 
 
     def distBetween(self, point2):
