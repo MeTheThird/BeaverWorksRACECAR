@@ -19,7 +19,7 @@ from ar_track_alvar_msgs.msg import AlvarMarkers
 
 '''
 TODO:
-delay for highway state switch -- Rohan
+delay for highway state switch -- done
 
 left wall follower
 
@@ -158,6 +158,10 @@ class Racecar:
             self.cmd.drive.speed = SPEED
             self.cmd.drive.steering_angle = steeringFactor * self.pot()[0]
 
+            if self.timeStarted > 0 and time.time() - self.timeStarted > HIGHWAY_TIME_THRESHOLD:
+                self.state = 'highway'
+                self.timeStarted = -1
+
         elif self.state == 'sign':
             self.safety_pub.publish(Bool(True))
             turnDir = self.oneWayTurn()
@@ -180,10 +184,10 @@ class Racecar:
             self.cmd.drive.speed = SPEED
             self.cmd.drive.steering_angle = self.bricksTurnAngle()
 
-        elif self.state == "carWash":
-            self.safety_pub.publish(Bool(False))
-            self.cmd.drive.speed = SPEED
-            self.cmd.drive.steering_angle = self.carWashTurnAngle()
+        # elif self.state == "carWash":
+        #     self.safety_pub.publish(Bool(False))
+        #     self.cmd.drive.speed = SPEED
+        #     self.cmd.drive.steering_angle = self.carWashTurnAngle()
 
         elif self.state == "bridge":
             self.safety_pub.publish(Bool(False))
@@ -197,10 +201,10 @@ class Racecar:
             self.cmd.drive.speed = 1000
             self.cmd.drive.steering_angle = self.rightWall(HIGH_DESIRED_DISTANCE)
 
-        elif self.state == "boulet":
-            self.safety_pub.publish(Bool(True))
-            self.cmd.drive.speed = SPEED
-            self.cmd.drive.steering_angle = self.leftWall(LOW_DESIRED_DISTANCE)
+        # elif self.state == "boulet":
+        #     self.safety_pub.publish(Bool(True))
+        #     self.cmd.drive.speed = SPEED
+        #     self.cmd.drive.steering_angle = self.leftWall(LOW_DESIRED_DISTANCE)
 
         elif self.state == "graveyard":
             self.safety_pub.publish(Bool(True))
@@ -218,7 +222,7 @@ class Racecar:
 
         elif self.state == "rightWall":
             self.safety_pub.publish(Bool(True))
-            self.cmd.drive.speed = SPEED/2
+            self.cmd.drive.speed = SPEED
             self.cmd.drive.steering_angle = self.rightWall(LOW_DESIRED_DISTANCE)
 
 
@@ -265,39 +269,56 @@ class Racecar:
     def arCallback(self, tags):
         if len(tags.markers) == 0:
             return
+
         tag = tags.markers[0]
         distTo = self.distToARTag(tag)
+
         if tag.id == 1 and distTo < AR_DIST_THRESHOLD:
-            # self.state = 'highway'
-            self.tagRead = True
-            self.timeStarted = time.time()
+            self.state = 'pot'
+            if self.timeStarted < 0:
+                self.tagRead = True
+                self.timeStarted = time.time()
+
         elif tag.id == 3 and distTo < AR_DIST_THRESHOLD:
              self.state = 'leftWall'
+
         elif tag.id == 4 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
+
         elif tag.id == 5 and distTo < AR_DIST_THRESHOLD:
             self.state = 'graveyard'
+
         elif tag.id == 6 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
+
         elif tag.id == 7 and distTo < AR_DIST_THRESHOLD:
-            self.state = 'highway'
-            self.tagRead = True
-            self.timeStarted = time.time()
+            self.state = 'pot'
+            if self.timeStarted < 0:
+                self.tagRead = True
+                self.timeStarted = time.time()
+
         elif tag.id == 8 and distTo < AR_DIST_THRESHOLD:
             self.state = 'rightWall'
+
         elif tag.id == 9 and distTo < AR_DIST_THRESHOLD:
             self.state = 'bridge'
+
         elif tag.id == 10 and distTo < AR_DIST_THRESHOLD:
             self.state = 'rightWall'
+
         # consider changing ALL of the ones below to the 'rightWall' state
         elif tag.id == 11 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
+
         elif tag.id == 12 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
+
         elif tag.id == 14 and distTo < AR_DIST_THRESHOLD:
             self.state = 'construction'
+
         elif tag.id == 16 and distTo < AR_DIST_THRESHOLD:
             self.state = 'rightWall'
+
         elif tag.id == 17 and distTo < AR_DIST_THRESHOLD:
             self.state = 'pot'
 
